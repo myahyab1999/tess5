@@ -1,11 +1,16 @@
 import requests
+import os
 import time
-from colorama import Fore, Style, init
+from colorama import Fore, Style
 import json
-from datetime import datetime, timedelta, timezone
-import argparse
+from datetime import datetime
 import urllib.parse
+import urllib3
 import random
+from functools import wraps
+
+urllib3.disable_warnings()
+
 # Function to parse user data from data.txt
 def parse_user_data(file_path):
     user_data_list = []
@@ -36,7 +41,30 @@ headers = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0'
 }
 
+def retry_request(retries=3, delay=5):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except (json.JSONDecodeError, requests.RequestException):
+                    if attempt > 0:
+                        print("\r" + " " * 200, end='')
+                    print(Fore.RED + Style.BRIGHT + f"[ Error ]: Gagal mendapatkan token.")
+                    if attempt < retries - 1:
+                        print(Fore.YELLOW + Style.BRIGHT + f"[ Retry ]: Mencoba ulang dalam {delay} detik... ({attempt + 1}/{retries})", end='\r')
+                        time.sleep(delay)
+                    else:
+                        print("\r" + " " * 200, end='')
+                        print(Fore.YELLOW + Style.BRIGHT + f"[ Retry ]: Semua Percobaan Gagal.")
+                        return None
+        return wrapper
+    return decorator
+
+@retry_request(retries=3, delay=5)
 def get_token(line, user_data):
+    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/user/login'
     payload = {
         "uid": user_data["id"],
         "first_name": user_data["first_name"],
@@ -44,193 +72,140 @@ def get_token(line, user_data):
         "username": user_data.get("username", ""),
         "tg_login_params": line
     }
-    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/user/login'
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Query Anda Salah")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
+@retry_request(retries=3, delay=5)
 def get_profile(user_data, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/user/profile'
     headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
+    payload = {
+        "uid": user_data["id"]
+    }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
+@retry_request(retries=3, delay=5)
 def get_farming_reward(user_data, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/reward'
     headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
+    payload = {
+        "uid": user_data["id"]
+    }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
-    
-def get_ref_reward(user_data, token):
-    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/invite/balance'
-    headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
-
-def claim_ref_reward(user_data, token):
-    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/invite/claim'
-    headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
-
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+@retry_request(retries=3, delay=5)
 def claim_farming_reward(user_data, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/reward/claim'
     headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
+    payload = {
+        "uid": user_data["id"]
+    }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
+@retry_request(retries=3, delay=5)
 def start_farming(user_data, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/reward/farming'
     headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
+    payload = {
+        "uid": user_data["id"]
+    }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
+@retry_request(retries=3, delay=5)    
+def get_ref_reward(user_data, token):
+    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/invite/balance'
+    headers['Authorization'] = token
+    payload = {
+        "uid": user_data["id"]
+    }
+
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
+    
+@retry_request(retries=3, delay=5)
+def claim_ref_reward(user_data, token):
+    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/invite/claim'
+    headers['Authorization'] = token
+    payload = {
+        "uid": user_data["id"]
+    }
+
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
+
+@retry_request(retries=3, delay=5)
 def get_task(user_data, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/task/list'
     headers['Authorization'] = token
-    payload = {"uid": user_data["id"]}
+    payload = {
+        "uid": user_data["id"]
+    }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
+@retry_request(retries=3, delay=5)
 def complete_task(user_data,task_name, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/task/complete'
     headers['Authorization'] = token
     payload = {
-            "uid": user_data["id"],
-            "type": task_name
+        "uid": user_data["id"],
+        "type": task_name
     }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
+
+@retry_request(retries=3, delay=5)    
 def claim_task(user_data,task_name, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/point/task/claim'
     headers['Authorization'] = token
     payload = {
-            "uid": user_data["id"],
-            "type": task_name
+        "uid": user_data["id"],
+        "type": task_name
     }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
 
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
+
+@retry_request(retries=3, delay=5)
 def check_tiket(token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/game/rule'
     headers['Authorization'] = token
 
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+    response = requests.get(url, headers=headers, verify=False)
+    response.raise_for_status()
+    return response.json()
 
+@retry_request(retries=3, delay=5)
 def play_game(token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/game/play'
     headers['Authorization'] = token
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
+
+    response = requests.get(url, headers=headers, verify=False)
+    response.raise_for_status()
+    return response.json()
+    
+@retry_request(retries=3, delay=5)
 def claim_game(game_id,point, token):
     url = 'https://tgapp-api.matchain.io/api/tgapp/v1/game/claim'
     headers['Authorization'] = token
@@ -238,52 +213,32 @@ def claim_game(game_id,point, token):
         "game_id": game_id,
         "point": point
     }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
-    
-def buy_tiket(token,user_id):
-    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/daily/task/purchase'
-    headers['Authorization'] = token
-    payload = {
-        "uid": user_id,
-        "type": "game"
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
-def buy_booster(token,user_id):
-    url = 'https://tgapp-api.matchain.io/api/tgapp/v1/daily/task/purchase'
-    headers['Authorization'] = token
-    payload = {
-        "uid": user_id,
-        "type": "daily"
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except json.JSONDecodeError:
-        print(f"JSON Decode Error: Token Invalid")
-        return None
-    except requests.RequestException as e:
-        print(f"Request Error: {e}")
-        return None
 
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
+
+@retry_request(retries=3, delay=5)
+def check_boost_status(token):
+    url = "https://tgapp-api.matchain.io/api/tgapp/v1/daily/task/status"
+    headers['Authorization'] = token
+
+    response = requests.get(url, headers=headers, verify=False)
+    response.raise_for_status()
+    return response.json()
+
+@retry_request(retries=3, delay=5)   
+def purchase_boost(token, uid):
+    url = "https://tgapp-api.matchain.io/api/tgapp/v1/daily/task/purchase"
+    headers['Authorization'] = token
+    payload = {
+        "uid": uid,
+        "type":"game"
+    }
+
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
 def calculate_default_score(rule):
     big_fire_count = 0
@@ -308,6 +263,26 @@ def calculate_default_score(rule):
 
     return big_fire_count, small_fire_count, magnifier_count, bomb_count, total_score
 
+@retry_request(retries=3, delay=5)
+def check_quiz(token):
+    url = "https://tgapp-api.matchain.io/api/tgapp/v1/daily/quiz/progress"
+    headers['Authorization'] = token
+
+    response = requests.get(url, headers=headers, verify=False)
+    response.raise_for_status()
+    return response.json()
+
+@retry_request(retries=3, delay=5)    
+def submit_quiz(token, selected_item):
+    url = "https://tgapp-api.matchain.io/api/tgapp/v1/daily/quiz/submit"
+    headers['Authorization'] = token
+    payload = {
+        "answer_result": selected_item
+    }
+
+    response = requests.post(url, headers=headers, json=payload, verify=False)
+    response.raise_for_status()
+    return response.json()
 
 def animated_loading(duration):
     frames = ["|", "/", "-", "\\"]
@@ -332,10 +307,20 @@ def convert_ts(seconds):
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return hours, minutes, seconds
+
+# Function to clear the terminal screen
+def clear_terminal():
+    if os.name == 'nt':  # For Windows
+        os.system('cls')
+    else:  # For Linux, Mac, etc.
+        os.system('clear')
+
 def main():
+    claim_reff_balance = input("Claim reff balance? (y/n): ").strip().upper()
     auto_clear_task = input("Auto clear and claim Task? (y/n): ").strip().upper()
+    buy_booster = input("Buy booster if available? (y/n): ").strip().upper()
     auto_play_game = input("Auto play game? (y/n): ").strip().upper()
-  
+
     if auto_play_game == "Y":
         print(Fore.YELLOW + Style.BRIGHT + f"Select Score: ")
         print(Fore.YELLOW + Style.BRIGHT + f"1. Default Score")
@@ -350,11 +335,11 @@ def main():
                     print(Fore.RED + Style.BRIGHT + "Masukan harus antara 1 dan 3.")
             except ValueError:
                 print(Fore.RED + Style.BRIGHT + "Masukan harus berupa angka.")
-
+       
     while True:
-
-        print_welcome_message()
         try:
+            clear_terminal()
+            print_welcome_message()
             for line, user_data in user_data_list:
                 print(Fore.CYAN + Style.BRIGHT + f"Getting token", end="\r", flush=True)
                 time.sleep(1)
@@ -365,6 +350,37 @@ def main():
                     token = get_token_response['data'].get('token')
                     nickname = get_token_response['data']['user'].get('nickname', 'Unknown')
                     print(Fore.CYAN + Style.BRIGHT + f"============= [ Akun {nickname} ] =============", flush=True)
+
+                    time.sleep(2)
+                    answer_result = []
+                    quizlist = check_quiz(token)
+                    if quizlist and quizlist.get('msg', 'Available') == 'Available':
+                        for quiz in quizlist.get('data', []):
+                            quiz_title = quiz.get('title', 'Unknown')
+                            print(Fore.YELLOW + Style.BRIGHT + f"[ Quiz ]: Finding Answer for {quiz_title}")
+                            quiz_id = quiz.get('Id', 'Unknown')
+                            answer = ''
+                            for answer in quiz.get('items', []):
+                                if answer.get('is_correct', False):
+                                    # example {"quiz_id":20,"selected_item":"B","correct_item":"B"}
+                                    print(Fore.GREEN + Style.BRIGHT + f"[ Quiz ]: Answer found : {answer['number']}")
+                                    answer_result.append({"quiz_id": quiz_id, "selected_item": answer['number'], "correct_item": answer['number']})
+                                    break
+                    elif quizlist and quizlist.get('msg', 'Available') == 'Already answered today':
+                        print(Fore.YELLOW + Style.BRIGHT + f"[ Quiz ]: Sudah menjawab quiz hari ini")
+                    else:
+                        print(Fore.RED + Style.BRIGHT + f"[ Quiz ]: Gagal mendapatkan informasi quiz")
+
+                    time.sleep(2)
+                    if answer_result:
+                        submit_quiz_response = submit_quiz(token, answer_result)
+                        if submit_quiz_response and submit_quiz_response.get('msg', 'NOTOK') == 'OK':
+                            print(Fore.GREEN + Style.BRIGHT + f"[ Quiz ]: Quiz berhasil dijawab")
+                        else:
+                            print(Fore.RED + Style.BRIGHT + f"[ Quiz ]: Gagal menjawab quiz")
+                    else:
+                        print(Fore.YELLOW + Style.BRIGHT + f"[ Quiz ]: Tidak ada quiz yang ditemukan")
+
                     profil = get_profile(user_data, token)
                     if profil is None or 'data' not in profil:
                         print(Fore.RED + Style.BRIGHT + f"[ Profile ]: Gagal mendapatkan data {nickname}!")
@@ -395,7 +411,7 @@ def main():
                             print(Fore.GREEN + Style.BRIGHT + f"[ Farming ]: Claiming {claim_balance} Point", end="\r", flush=True)
                             claim_farming = claim_farming_reward(user_data, token)
                             if claim_farming:
-                                print(Fore.GREEN + Style.BRIGHT + f"[ Farming ]: Claimed {claim_balance} Point              ", flush=True)
+                                print(Fore.GREEN + Style.BRIGHT + f"[ Farming ]: Claimed {claim_balance} Point               ", flush=True)
                                 print(Fore.GREEN + Style.BRIGHT + f"[ Farming ]: Starting Farming..", end="\r", flush=True)
                                 start_farming_response = start_farming(user_data, token)
                                 if start_farming_response:
@@ -414,77 +430,89 @@ def main():
                         else:
                             print(Fore.YELLOW + Style.BRIGHT + f"[ Farming ]: Still Farming         ")
 
-                        print(Fore.YELLOW + Style.BRIGHT + f"[ Reff Balance ]: Checking..", end="\r", flush=True)
-                        time.sleep(2)
-                        cek_reff_balance = get_ref_reward(user_data,token)
-                        if cek_reff_balance is None or 'data' not in farming_balance:
-                            print(Fore.RED + Style.BRIGHT + f"[ Reff Balance ]: Gagal mendapatkan data {nickname}!", flush=True)
+                        if claim_reff_balance == 'Y':
+                            print(Fore.YELLOW + Style.BRIGHT + f"[ Reff Balance ]: Checking..", end="\r", flush=True)
+                            time.sleep(2)
+                            cek_reff_balance = get_ref_reward(user_data, token)
+                            
+                            if cek_reff_balance is None or 'data' not in cek_reff_balance:
+                                print(Fore.RED + Style.BRIGHT + f"[ Reff Balance ]: Gagal mendapatkan data {nickname}!", flush=True)
+                            else:
+                                saldo = cek_reff_balance['data'].get('balance', 0)
+                                saldo_view = format_balance(saldo)
+                                print(Fore.GREEN + Style.BRIGHT + f"[ Reff Balance ]: Reward {saldo_view} Point          ", flush=True)
+                                
+                                if int(saldo_view) > 0:
+                                    claim_reff = claim_ref_reward(user_data, token)
+                                    if claim_reff:
+                                        saldo_claim = claim_reff.get('data')
+                                        saldo_claim_view = format_balance(saldo_claim)
+                                        print(Fore.GREEN + Style.BRIGHT + f"[ Reff Balance ]: Claimed {saldo_claim_view} Point            ", flush=True)
+                                    else:
+                                        print(Fore.RED + Style.BRIGHT + f"[ Reff Balance ]: Failed to claim reff balance!          ", flush=True)
                         else:
-                            saldo = cek_reff_balance['data'].get('balance', 0)
-                            saldo_view = format_balance(saldo)
-                            print(Fore.GREEN + Style.BRIGHT + f"[ Reff Balance ]: Reward {saldo_view} Point          ", flush=True)
-                            if int(saldo_view) > 0:
-                                claim_reff = claim_ref_reward(user_data,token)
-                                if claim_reff:
-                                    saldo_claim = claim_reff.get('data')
-                                    saldo_claim_view = format_balance(saldo_claim)
-                                    print(Fore.GREEN + Style.BRIGHT + f"[ Reff Balance ]: Claimed {saldo_claim_view} Point            ", flush=True)
-                                else:
-                                    print(Fore.RED + Style.BRIGHT + f"[ Reff Balance ]: Failed to claim reff balance!          ", flush=True)
-
-
+                            print(Fore.YELLOW + Style.BRIGHT + f"[ Reff Balance ]: Skipping Claim Reff Balance", flush=True)
 
                         if auto_clear_task == "Y":
                             print(Fore.GREEN + Style.BRIGHT + f"[ Task ]: Checking..", end="\r", flush=True)
                             get_task_list = get_task(user_data, token)
                             if get_task_list:
-                                task_list = get_task_list.get('data', [])
-                                for task in task_list:
-                                    if not task['complete']:
-                                        print(Fore.GREEN  + f"[ Task ]: Finishing task {task['name']}", end="\r" , flush=True)
-                                        time.sleep(1)
-                                        complete_task_result = complete_task(user_data,task['name'],token)   
-                                        if complete_task_result:
-                                            result = complete_task_result.get('data', False)
-                                            if result:
-                                                print(Fore.GREEN + Style.BRIGHT + f"[ Task ]: Claiming task {task['name']}               ", flush=True)
-                                                time.sleep(1)
-                                                claim_task_result = claim_task(user_data,task['name'],token)
-                                                if claim_task_result:
-                                                    print(f"{Fore.GREEN+Style.BRIGHT}[ Task ]: Complete and Claimed {task['name']}               " , flush=True)
+                                task_list = get_task_list.get('data', {})
+
+                                all_tasks_completed = True
+
+                                # Iterate over all task categories dynamically
+                                for category_name, tasks in task_list.items():
+                                    for task in tasks:
+                                        if not task['complete']:
+                                            all_tasks_completed = False
+                                            print(Fore.GREEN + f"[ Task ]: Finishing task {task['name']} from {category_name}", end="\r", flush=True)
+                                            time.sleep(1)
+                                            complete_task_result = complete_task(user_data, task['name'], token)
+                                            if complete_task_result:
+                                                result = complete_task_result.get('data', False)
+                                                if result:
+                                                    print(Fore.GREEN + Style.BRIGHT + f"[ Task ]: Claiming task {task['name']} from {category_name}               ", flush=True)
+                                                    time.sleep(1)
+                                                    claim_task_result = claim_task(user_data, task['name'], token)
+                                                    if claim_task_result:
+                                                        print(f"{Fore.GREEN + Style.BRIGHT}[ Task ]: Complete and Claimed {task['name']} from {category_name}               ", flush=True)
+                                                    else:
+                                                        print(f"{Fore.RED + Style.BRIGHT}[ Task ]: Failed to claim task {task['name']} from {category_name}                  ", flush=True)
                                                 else:
-                                                    print(f"{Fore.RED+Style.BRIGHT}[ Task ]: Failed to claim task {task['name']}                  ", flush=True)
+                                                    print(f"{Fore.RED + Style.BRIGHT}[ Task ]: Failed to complete task {task['name']} from {category_name}                  ", flush=True)
                                             else:
-                                                 print(f"{Fore.RED+Style.BRIGHT}[ Task ]: Failed to claim task {task['name']}                  ", flush=True)
+                                                print(f"{Fore.RED + Style.BRIGHT}[ Task ]: Failed to finish task {task['name']} from {category_name}            ", flush=True)
+
+                                # If all tasks are completed
+                                if all_tasks_completed:
+                                    print(f"{Fore.GREEN + Style.BRIGHT}[ Task ]: All Tasks Completed              ", flush=True)
+                            else:
+                                print(f"{Fore.RED + Style.BRIGHT}[ Task ]: Failed to Get Task List          ", flush=True)
+                        else:
+                            print(Fore.YELLOW + Style.BRIGHT + f"[ Task ]: Skipping Auto Clear and Claim Task", flush=True)
+
+                        if buy_booster == 'Y':
+                            print(Fore.YELLOW + Style.BRIGHT + f"[ Booster ]: Checking booster status..", end="\r", flush=True)
+                            time.sleep(2)
+                            booster_status = check_boost_status(token)
+                            
+                            if booster_status:
+                                for booster in booster_status.get('data', []):
+                                    if booster['name'] == 'Game Booster' and booster['current_count'] < booster['task_count']:
+                                        print(Fore.YELLOW + Style.BRIGHT + f"[ Booster ]: Purchasing Booster..", end="\r", flush=True)
+                                        time.sleep(2)
+                                        purchase_booster = purchase_boost(token, booster['uid'])
+                                        if purchase_booster:
+                                            print(Fore.GREEN + Style.BRIGHT + f"[ Booster ]: Booster Purchased!           ", flush=True)
                                         else:
-                                            print(f"{Fore.RED+Style.BRIGHT}[ Task ]: Failed to finishing {task['name']}            ", flush=True)
+                                            print(Fore.RED + Style.BRIGHT + f"[ Booster ]: Failed to purchase booster!           ", flush=True)
                             else:
-                                print(f"{Fore.RED+Style.BRIGHT}[ Task ]: Failed Get List Task          ", flush=True)
-                        
-                        print(Fore.CYAN + Style.BRIGHT + f"[ Daily Booster ]: Checking..", end="\r", flush=True)
-                        time.sleep(2)
-                        booster = buy_booster(token,user_data['id'])
-                        if booster:
-                            if booster['code'] == 200:
-                                msg = booster['msg']
-                                print(Fore.CYAN + Style.BRIGHT + f"[ Daily Booster ]: {msg}                 ", flush=True)
-                            elif booster['code'] == 400:
-                                msg = booster['msg']
-                                print(Fore.YELLOW + Style.BRIGHT + f"[ Daily Booster ]: {msg}                 ", flush=True)
-                            else:
-                                print(Fore.RED + Style.BRIGHT + f"[ Daily Booster ]: Failed to buy booster            ", flush=True)
-                        print(Fore.CYAN + Style.BRIGHT + f"[ Game Booster ]: Checking..", end="\r", flush=True)
-                        time.sleep(2)
-                        game_tiket = buy_tiket(token,user_data['id'])
-                        if game_tiket:
-                            if game_tiket['code'] == 200:
-                                msg = game_tiket['msg']
-                                print(Fore.CYAN + Style.BRIGHT + f"[ Game Booster ]: {msg}                 ", flush=True)
-                            elif game_tiket['code'] == 400:
-                                msg = game_tiket['msg']
-                                print(Fore.YELLOW + Style.BRIGHT + f"[ Game Booster ]: {msg}                 ", flush=True)
-                            else:
-                                print(Fore.RED + Style.BRIGHT + f"[ Game Booster ]: Failed to buy booster            ", flush=True)
+                                print(Fore.RED + Style.BRIGHT + f"[ Booster ]: Failed to check booster status!          ", flush=True)
+                        else:
+                            print(Fore.YELLOW + Style.BRIGHT + f"[ Booster ]: Skipping Booster Purchase", flush=True)
+
+
                         print(Fore.GREEN + Style.BRIGHT + f"[ Game ]: Checking ticket..", end="\r", flush=True)
                         time.sleep(2)
                         tiket_response = check_tiket(token)
@@ -511,10 +539,10 @@ def main():
                                                 max_score = total_score
                                             elif select_score == 2: # max score
                                                 print(Fore.YELLOW + Style.BRIGHT + f"[ Game ]: Max Score Selected       ", flush=True)
-                                                max_score = 100
+                                                max_score = 200
                                             else: # random score
                                                 print(Fore.YELLOW + Style.BRIGHT + f"[ Game ]: Random Score Selected       ", flush=True)
-                                                max_score = random.randint(40, 90)
+                                                max_score = random.randint(100, 200)
                                             game_result = claim_game(game_id, max_score, token)
                                             
                                             if game_result.get('code') == 200:
@@ -537,7 +565,8 @@ def main():
                                                  break
                                     else:
                                         print(Fore.RED + Style.BRIGHT + f"[ Game ]: Failed to play game            ", flush=True)
-
+                            else:
+                                print(Fore.YELLOW + Style.BRIGHT + f"[ Game ]: Skipping Auto Play Game", flush=True)
                         else:
                             print(f"{Fore.RED+Style.BRIGHT}[ Game ]: Failed Get Tiket            ", flush=True)
                 else:
@@ -546,33 +575,19 @@ def main():
                     continue
 
             print(Fore.BLUE + Style.BRIGHT + f"\n==========SEMUA AKUN TELAH DIPROSES==========\n", flush=True)
-            animated_loading(7200)
+            animated_loading(300)
         except Exception as e:
-            
-            print(f"An error occurred: {str(e)}")
             time.sleep(5)
-        except KeyboardInterrupt:
-            print(f"\n{Fore.RED+Style.BRIGHT}Proses dihentikan paksa oleh anda!")
-            break
-
+            print(f"An error occurred: {str(e)}")
 
 def print_welcome_message():
-    print(r"""
-          
-█▀▀ █░█ ▄▀█ █░░ █ █▄▄ █ █▀▀
-█▄█ █▀█ █▀█ █▄▄ █ █▄█ █ ██▄
-          """)
-    print(Fore.GREEN + Style.BRIGHT + "MatchQuest BOT")
-    print(Fore.CYAN + Style.BRIGHT + "Update Link: https://github.com/adearman/matchquest")
+    print(Fore.RED + Style.BRIGHT + "█▀▀ " + Fore.YELLOW + "█░█ " + Fore.RED + "▄▀█ " + Fore.YELLOW + "█░░ " + Fore.RED + "█ " + Fore.YELLOW + "█▄▄ " + Fore.RED + "█ " + Fore.YELLOW + "█▀▀")
+    print(Fore.YELLOW + "█▄█ " + Fore.RED + "█▀█ " + Fore.YELLOW + "█▀█ " + Fore.RED + "█▄▄ " + Fore.YELLOW + "█ " + Fore.RED + "█▄█ " + Fore.YELLOW + "█ " + Fore.RED + "██▄")
+    print(Fore.CYAN + Style.BRIGHT + "\nMatchQuest BOT")
+    print(Fore.CYAN + Style.BRIGHT + "Update Link: https://github.com/adearmanwijaya/")
     print(Fore.YELLOW + Style.BRIGHT + "Free Konsultasi Join Telegram Channel: https://t.me/ghalibie")
-    print(Fore.BLUE + Style.BRIGHT + "Buy me a coffee :) 0823 2367 3487 GOPAY / DANA")
-    print(Fore.RED + Style.BRIGHT + "NOT FOR SALE ! Ngotak dikit bang. Ngoding susah2 kau tinggal rename :)")
-    current_time = datetime.now()
-    up_time = current_time - start_time
-    days, remainder = divmod(up_time.total_seconds(), 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    print(Fore.CYAN + Style.BRIGHT + f"Up time bot: {int(days)} hari, {int(hours)} jam, {int(minutes)} menit, {int(seconds)} detik\n\n")
+    print(Fore.YELLOW + Style.BRIGHT + "Buy me a coffee :) 0823 2367 3487 GOPAY / DANA / BINANCE ID 248613229")
+    print(Fore.YELLOW + Style.BRIGHT + "NOT FOR SALE ! Ngotak dikit bang. Ngoding susah2 kau tinggal rename :)\n\n")
 
 if __name__ == "__main__":
     main()
